@@ -1,0 +1,101 @@
+name: 🚀 Build & Prepare Deployment
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: 📦 Validate files
+      run: |
+        echo "✅ Validating deployment files..."
+        ls -la
+        [ -f "bot.py" ] && echo "✅ bot.py found" || echo "❌ bot.py missing"
+        [ -f "requirements.txt" ] && echo "✅ requirements.txt found" || echo "❌ requirements.txt missing"
+        [ -f "passenger_wsgi.py" ] && echo "✅ passenger_wsgi.py found" || echo "❌ passenger_wsgi.py missing"
+        echo "📋 All files validated!"
+        
+    - name: 🔧 Test imports
+      run: |
+        pip install -r requirements.txt
+        python -c "import flask; print('✅ Flask works')"
+        python -c "import requests; print('✅ Requests works')"
+        echo "🎉 All dependencies working!"
+        
+    - name: 📤 Create deployment package
+      run: |
+        # Create timestamp for unique package name
+        TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+        
+        # Create deployment instructions
+        cat > DEPLOY_INSTRUCTIONS.md << 'EOF'
+        # 🚀 Chattelo Bot - Deployment Instructions
+        
+        ## Quick Deploy to PythonAnywhere
+        
+        1. **Upload Files to PythonAnywhere:**
+           - Go to: https://www.pythonanywhere.com/user/perfctex/files/home/perfctex/chattelo_bot/
+           - Upload these 3 files:
+             - `bot.py`
+             - `requirements.txt` 
+             - `passenger_wsgi.py`
+           
+        2. **Install Dependencies:**
+           - Open a Bash console in PythonAnywhere
+           - Run: `cd ~/chattelo_bot && pip install -r requirements.txt`
+           
+        3. **Reload Web App:**
+           - Go to Web tab → Click "Reload"
+           
+        4. **Set Webhook:**
+           - Visit: https://perfctex.pythonanywhere.com/set_webhook
+           - Or use: https://api.telegram.org/bot8080306073:AAHy6IO4j_uResEEN_H2K-PJ2TkPws79mH8/setWebhook?url=https://perfctex.pythonanywhere.com/8080306073:AAHy6IO4j_uResEEN_H2K-PJ2TkPws79mH8
+           
+        ## Bot Commands
+        - `/start` - Welcome message
+        - `/chat` - Find a partner  
+        - `/stop` - End conversation
+        - `/status` - Check bot status
+        
+        ## GitHub Repo
+        https://github.com/behar5057/24-7
+        EOF
+        
+        echo "📦 Deployment package ready!"
+        echo "⏰ Timestamp: $TIMESTAMP"
+        echo "🔗 Commit: ${{ github.sha }}"
+        
+    - name: 📎 Upload deployment instructions
+      uses: actions/upload-artifact@v4
+      with:
+        name: deployment-files
+        path: |
+          bot.py
+          requirements.txt
+          passenger_wsgi.py
+          DEPLOY_INSTRUCTIONS.md
+        retention-days: 30
+        
+    - name: 🎉 Deployment ready
+      run: |
+        echo "🎯 DEPLOYMENT READY!"
+        echo "===================="
+        echo "📥 Download the 'deployment-files' artifact from this workflow run"
+        echo "🔧 Upload the 3 files to PythonAnywhere"
+        echo "🌐 Reload your web app"
+        echo "✅ Done!"
+        echo ""
+        echo "Quick link to set webhook:"
+        echo "https://perfctex.pythonanywhere.com/set_webhook"
