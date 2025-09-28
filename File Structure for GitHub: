@@ -5,3 +5,4 @@ bot.py
 requirements.txt
 passenger_wsgi.py
 README.md
+.gitignore
