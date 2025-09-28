@@ -1,0 +1,28 @@
+name: Deploy via FTP
+
+on:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: FTP Deploy
+      uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      with:
+        server: ${{ secrets.FTP_SERVER }}
+        username: ${{ secrets.FTP_USERNAME }}
+        password: ${{ secrets.FTP_PASSWORD }}
+        server-dir: /chattelo_bot/
+        local-dir: ./
+        
+    - name: Set Webhook
+      env:
+        BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        PA_USERNAME: ${{ secrets.PYTHONANYWHERE_USERNAME }}
+      run: |
+        curl -X POST "https://api.telegram.org/bot$BOT_TOKEN/setWebhook?url=https://$PA_USERNAME.pythonanywhere.com/$BOT_TOKEN"
