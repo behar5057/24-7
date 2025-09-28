@@ -7,9 +7,9 @@ from collections import defaultdict, deque
 # Initialize Flask app
 app = Flask(__name__)
 
-# Configuration with YOUR credentials
-BOT_TOKEN = "8080306073:AAHy6IO4j_uResEEN_H2K-PJ2TkPws79mH8"
-ADMIN_ID = "6120264201"
+# Configuration
+BOT_TOKEN = os.environ.get('BOT_TOKEN', "8080306073:AAHy6IO4j_uResEEN_H2K-PJ2TkPws79mH8")
+ADMIN_ID = os.environ.get('ADMIN_ID', "6120264201")
 
 # Telegram API URL
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
@@ -26,6 +26,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# App version (for deployment tracking)
+APP_VERSION = "1.0.0"
+GIT_COMMIT = os.environ.get('GIT_COMMIT', 'local')
+
 def send_telegram_message(chat_id, text, parse_mode=None):
     """Send message to Telegram user"""
     url = f"{TELEGRAM_API}/sendMessage"
@@ -37,7 +41,7 @@ def send_telegram_message(chat_id, text, parse_mode=None):
         payload['parse_mode'] = parse_mode
     
     try:
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, timeout=10)
         return response.status_code == 200
     except Exception as e:
         logger.error(f"Error sending message: {e}")
@@ -62,7 +66,7 @@ def send_message_with_keyboard(chat_id, text, buttons):
     }
     
     try:
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, timeout=10)
         return response.status_code == 200
     except Exception as e:
         logger.error(f"Error sending message with keyboard: {e}")
@@ -76,7 +80,7 @@ def answer_callback_query(callback_query_id, text=None):
         payload['text'] = text
     
     try:
-        requests.post(url, json=payload)
+        requests.post(url, json=payload, timeout=5)
     except Exception as e:
         logger.error(f"Error answering callback: {e}")
 
@@ -91,7 +95,7 @@ def edit_message_text(chat_id, message_id, text):
     }
     
     try:
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, timeout=10)
         return response.status_code == 200
     except Exception as e:
         logger.error(f"Error editing message: {e}")
@@ -135,7 +139,7 @@ def webhook():
     """Main webhook handler"""
     try:
         data = request.get_json()
-        logger.info(f"Received update: {data}")
+        logger.info(f"Received update from Telegram")
         
         # Handle message
         if 'message' in data:
@@ -151,6 +155,8 @@ def webhook():
                     handle_chat(chat_id)
                 elif text == '/stop':
                     handle_stop(chat_id)
+                elif text == '/status':
+                    handle_status(chat_id)
                 else:
                     send_telegram_message(chat_id, "Unknown command. Use /start to see available commands.")
             else:
@@ -194,8 +200,8 @@ def handle_start(chat_id):
         [("Help", "help")]
     ]
     
-    welcome_text = """
-👋 Welcome to *Chattelo*!
+    welcome_text = f"""
+👋 Welcome to *Chattelo*! (v{APP_VERSION})
 
 I'm your random chat bot that connects you with strangers for anonymous conversations.
 
@@ -203,6 +209,7 @@ I'm your random chat bot that connects you with strangers for anonymous conversa
 /start - Show this welcome message
 /chat - Start looking for a chat partner
 /stop - End current conversation
+/status - Check bot status
 
 *How it works:*
 1. Use /chat or click 'Start Random Chat'
@@ -295,6 +302,7 @@ def handle_help(chat_id, message_id):
 /start - Show welcome message
 /chat - Start looking for a partner  
 /stop - End current chat or leave queue
+/status - Check bot status
 
 *How to use:*
 1. Click 'Start Random Chat' or type /chat
@@ -308,18 +316,39 @@ def handle_help(chat_id, message_id):
 - No sharing personal information
 - Have fun! 🎉
 
-Need help? Contact admin.
+*GitHub:* https://github.com/yourusername/chattelo-bot
     """
     edit_message_text(chat_id, message_id, help_text)
+
+def handle_status(chat_id):
+    """Handle /status command"""
+    status_text = f"""
+🤖 *Chattelo Bot Status*
+
+*Version:* {APP_VERSION}
+*Commit:* {GIT_COMMIT[:8]}
+*Active Chats:* {len(active_connections) // 2}
+*Waiting Users:* {len(waiting_queue)}
+*Total Users:* {len(user_states)}
+
+*Server:* PythonAnywhere
+*Status:* ✅ Operational
+
+Use /chat to start a conversation!
+    """
+    send_telegram_message(chat_id, status_text, "Markdown")
 
 @app.route('/')
 def index():
     """Health check route"""
     return jsonify({
         "status": "Chattelo Bot is running!",
+        "version": APP_VERSION,
+        "commit": GIT_COMMIT,
         "active_chats": len(active_connections) // 2,
         "waiting_users": len(waiting_queue),
-        "total_users": len(user_states)
+        "total_users": len(user_states),
+        "github_repo": "https://github.com/yourusername/chattelo-bot"
     })
 
 @app.route('/set_webhook', methods=['GET'])
@@ -329,13 +358,14 @@ def set_webhook():
     set_webhook_url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={webhook_url}"
     
     try:
-        response = requests.get(set_webhook_url)
+        response = requests.get(set_webhook_url, timeout=10)
         success = response.status_code == 200
         
         return jsonify({
             "success": success,
             "webhook_url": webhook_url,
-            "message": "Webhook set successfully" if success else "Failed to set webhook"
+            "message": "Webhook set successfully" if success else "Failed to set webhook",
+            "version": APP_VERSION
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -344,7 +374,7 @@ def set_webhook():
 def delete_webhook():
     """Delete webhook"""
     try:
-        response = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook")
+        response = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook", timeout=10)
         success = response.status_code == 200
         
         return jsonify({
@@ -354,12 +384,15 @@ def delete_webhook():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/status')
-def status():
-    """Check bot status"""
-    return jsonify({
-        "status": "online",
-        "active_chats": len(active_connections) // 2,
-        "waiting_users": len(waiting_queue),
-        "total_users": len(user_states)
-    })
+@app.route('/github-webhook', methods=['POST'])
+def github_webhook():
+    """GitHub webhook for deployment notifications"""
+    if request.headers.get('X-GitHub-Event') == 'push':
+        logger.info("Received GitHub push notification")
+        # Could trigger auto-deployment here
+        return jsonify({"message": "GitHub webhook received"})
+    return jsonify({"message": "Not a push event"})
+
+if __name__ == '__main__':
+    # This won't run on PythonAnywhere, only locally
+    app.run(debug=True)
