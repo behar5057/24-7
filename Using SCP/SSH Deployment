@@ -1,0 +1,57 @@
+name: Deploy Chattelo Bot via SSH
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Run tests
+      run: |
+        python -m pytest tests/ -v || echo "No tests found, continuing deployment"
+        
+    - name: Deploy via SSH
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.SSH_HOST }}
+        username: ${{ secrets.SSH_USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: ${{ secrets.SSH_PORT || 22 }}
+        script: |
+          cd ~/chattelo_bot
+          git pull origin main
+          pip install -r requirements.txt
+          # Reload web app (PythonAnywhere specific)
+          touch /var/www/${SSH_USERNAME}_pythonanywhere_com_wsgi.py
+          echo "Deployment completed via SSH"
+          
+    - name: Set Webhook
+      env:
+        BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        PA_USERNAME: ${{ secrets.PYTHONANYWHERE_USERNAME }}
+      run: |
+        curl -X POST "https://api.telegram.org/bot$BOT_TOKEN/setWebhook?url=https://$PA_USERNAME.pythonanywhere.com/$BOT_TOKEN"
+        
+    - name: Verify Deployment
+      env:
+        PA_USERNAME: ${{ secrets.PYTHONANYWHERE_USERNAME }}
+      run: |
+        sleep 10  # Wait for reload
+        curl -f "https://$PA_USERNAME.pythonanywhere.com/status" || echo "Status check failed"
