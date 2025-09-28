@@ -1,0 +1,102 @@
+name: Deploy Chattelo Bot
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Run basic checks
+      run: |
+        python -c "import flask; print('Flask OK')"
+        python -c "import requests; print('Requests OK')"
+        echo "All imports working!"
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Create deployment package
+      run: |
+        # Create a clean deployment directory
+        mkdir -p deployment
+        cp bot.py requirements.txt passenger_wsgi.py deployment/
+        
+        # Create deployment info file
+        cat > deployment/deploy-info.txt << EOF
+        Deployment Info:
+        - Commit: ${{ github.sha }}
+        - Branch: ${{ github.ref }}
+        - Time: $(date)
+        - Repo: ${{ github.repository }}
+        EOF
+        
+        # Create install script for PythonAnywhere
+        cat > deployment/install.sh << 'EOF'
+        #!/bin/bash
+        echo "Installing Chattelo Bot on PythonAnywhere..."
+        pip install -r requirements.txt
+        echo "Installation completed!"
+        EOF
+        
+        chmod +x deployment/install.sh
+        
+        # Create tar package
+        tar -czf chattelo-deploy-${{ github.sha }}.tar.gz deployment/
+        echo "Deployment package created: chattelo-deploy-${{ github.sha }}.tar.gz"
+        
+    - name: Upload deployment package
+      uses: actions/upload-artifact@v4
+      with:
+        name: chattelo-bot-package
+        path: chattelo-deploy-*.tar.gz
+        retention-days: 30
+        
+    - name: Notify deployment ready
+      run: |
+        echo "🚀 Deployment package ready!"
+        echo ""
+        echo "📦 Download the artifact from this workflow run"
+        echo "🔧 Manual deployment steps for PythonAnywhere:"
+        echo ""
+        echo "1. Go to PythonAnywhere Dashboard"
+        echo "2. Open Files tab → /home/perfctex/chattelo_bot/"
+        echo "3. Upload the extracted files:"
+        echo "   - bot.py"
+        echo "   - requirements.txt" 
+        echo "   - passenger_wsgi.py"
+        echo "4. Open Bash console and run:"
+        echo "   cd ~/chattelo_bot"
+        echo "   pip install -r requirements.txt"
+        echo "5. Reload your web app"
+        echo ""
+        echo "🌐 Set webhook after deployment:"
+        echo "   https://perfctex.pythonanywhere.com/set_webhook"
+        
+    - name: Send webhook notification
+      if: always()
+      run: |
+        curl -X POST -H "Content-Type: application/json" \
+          -d '{"text":"🚀 Chattelo Bot deployment ready for manual deployment to PythonAnywhere\n\nRepo: ${{ github.repository }}\nCommit: ${{ github.sha }}\nWorkflow: ${{ github.workflow }}"}' \
+          ${{ secrets.SLACK_WEBHOOK || 'https://hooks.slack.com/services/DUMMY' }} || echo "Slack notification skipped"
